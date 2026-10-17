@@ -562,6 +562,12 @@ impl RenderOnce for Dialog {
         let on_ok = self.button_props.ok_handler();
         let on_cancel = self.button_props.cancel_handler();
 
+        let frame_insets = crate::window_border::window_content_insets(window);
+        let backdrop_size = window.viewport_size()
+            - gpui::size(
+                frame_insets.left + frame_insets.right,
+                frame_insets.top + frame_insets.bottom,
+            );
         let window_paddings = crate::window_border::window_paddings(window);
         let view_size = window.viewport_size()
             - gpui::size(
@@ -638,7 +644,11 @@ impl RenderOnce for Dialog {
                                 this.backdrop(
                                     div()
                                         .absolute()
-                                        .size_full()
+                                        .left(frame_insets.left)
+                                        .top(frame_insets.top)
+                                        .w(backdrop_size.width)
+                                        .h(backdrop_size.height)
+                                        .rounded(window.client_corner_radius(cx))
                                         .window_control_area(WindowControlArea::Drag)
                                         .when(self.props.overlay_visible, |overlay| {
                                             overlay.bg(overlay_color(true, cx))

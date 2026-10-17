@@ -23,6 +23,7 @@ pub(crate) fn init(cx: &mut App) {
 
 /// Component-owned window state and presentation; Base owns the actual root.
 pub(crate) struct WindowState {
+    pub(crate) client_corner_radius: gpui::Pixels,
     pub(crate) active_sheet: Option<ActiveSheet>,
     pub(crate) active_dialogs: Vec<ActiveDialog>,
     pub(super) focused_input: Option<AnyInputState>,
@@ -72,6 +73,7 @@ impl ActiveDialog {
 impl WindowState {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
+            client_corner_radius: gpui::px(0.),
             active_sheet: None,
             active_dialogs: Vec::new(),
             focused_input: None,
@@ -437,12 +439,16 @@ impl gpui_base::RootPlugin for WindowState {
         TextSelection::activate_scope(self.active_text_selection_scope(), window, cx);
     }
 
-    fn style(&self, surface: &mut gpui::Stateful<gpui::Div>, _window: &mut Window, cx: &mut App) {
+    fn style(&self, surface: &mut gpui::Stateful<gpui::Div>, window: &mut Window, cx: &mut App) {
         use gpui::Refineable as _;
         surface.style().refine(
             &gpui::StyleRefinement::default()
                 .font_family(cx.theme().font_family.clone())
                 .bg(cx.theme().tokens.background)
+                .rounded(crate::window_border::effective_corner_radius(
+                    window,
+                    self.client_corner_radius,
+                ))
                 .text_color(cx.theme().foreground),
         );
     }
@@ -454,7 +460,9 @@ impl gpui_base::RootPlugin for WindowState {
         _window: &mut Window,
         _cx: &mut App,
     ) -> impl IntoElement {
-        window_border().child(surface)
+        window_border()
+            .corner_radius(self.client_corner_radius)
+            .child(surface)
     }
 }
 

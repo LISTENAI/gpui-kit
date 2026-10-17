@@ -11,6 +11,16 @@ use std::rc::Rc;
 
 /// Extension trait for [`Window`] to add dialog, sheet .. functionality.
 pub trait WindowExt: Sized {
+    /// Set the radius of an untiled client-decorated window's surface and frame.
+    ///
+    /// Defaults to zero. Applications opting in must round exposed child
+    /// backgrounds too: GPUI's overflow content masks are rectangular.
+    /// Server decorations, tiled windows and fullscreen windows remain square.
+    fn set_client_corner_radius(&mut self, radius: gpui::Pixels, cx: &mut App);
+
+    /// Effective radius for the current client decoration state.
+    fn client_corner_radius(&self, cx: &App) -> gpui::Pixels;
+
     /// Opens a Sheet at right placement.
     fn open_sheet<F>(&mut self, cx: &mut App, build: F)
     where
@@ -90,6 +100,20 @@ pub trait WindowExt: Sized {
 }
 
 impl WindowExt for Window {
+    fn set_client_corner_radius(&mut self, radius: gpui::Pixels, cx: &mut App) {
+        WindowState::update(self, cx, |state, _, cx| {
+            state.client_corner_radius = radius.max(gpui::px(0.));
+            cx.notify();
+        });
+    }
+
+    fn client_corner_radius(&self, cx: &App) -> gpui::Pixels {
+        crate::window_border::effective_corner_radius(
+            self,
+            WindowState::read(self, cx).client_corner_radius,
+        )
+    }
+
     #[inline]
     fn open_sheet<F>(&mut self, cx: &mut App, build: F)
     where

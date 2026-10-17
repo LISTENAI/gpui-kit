@@ -15,11 +15,19 @@ pub(crate) const SHADOW_SIZE: Pixels = px(20.0);
 const BORDER_SIZE: Pixels = px(1.0);
 /// Half-width of the resize hit band on each side of the visible frame (inner border).
 const RESIZE_HIT_SIZE: Pixels = px(4.0);
-///
-/// GPUI currently clips overflowing children to a rectangular content mask. A non-zero
-/// radius here would round the frame itself but leave child backgrounds visible in the
-/// corners, so keep the generic window wrapper square until rounded content masks exist.
-pub(crate) const BORDER_RADIUS: Pixels = px(0.0);
+/// Use square frames unless an application rounds its exposed child surfaces.
+const BORDER_RADIUS: Pixels = px(0.0);
+
+pub(crate) fn effective_corner_radius(window: &Window, radius: Pixels) -> Pixels {
+    radius_for_decorations(window.window_decorations(), window.is_fullscreen(), radius)
+}
+
+fn radius_for_decorations(decorations: Decorations, fullscreen: bool, radius: Pixels) -> Pixels {
+    match decorations {
+        Decorations::Client { tiling } if !tiling.is_tiled() && !fullscreen => radius,
+        _ => px(0.),
+    }
+}
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {
@@ -30,6 +38,7 @@ pub fn window_border() -> WindowBorder {
 #[derive(IntoElement)]
 pub struct WindowBorder {
     shadow_size: Pixels,
+    corner_radius: Pixels,
     resize_hit_size: Pixels,
     children: Vec<AnyElement>,
 }
@@ -38,6 +47,7 @@ impl Default for WindowBorder {
     fn default() -> Self {
         Self {
             shadow_size: SHADOW_SIZE,
+            corner_radius: BORDER_RADIUS,
             resize_hit_size: RESIZE_HIT_SIZE,
             children: Vec::new(),
         }
@@ -47,6 +57,12 @@ impl Default for WindowBorder {
 impl WindowBorder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Round the frame. Exposed child backgrounds must use matching corners.
+    pub fn corner_radius(mut self, radius: impl Into<Pixels>) -> Self {
+        self.corner_radius = radius.into().max(px(0.));
+        self
     }
 
     /// Set the shadow size for typical Linux client-side decorations.
@@ -129,6 +145,7 @@ impl ParentElement for WindowBorder {
 
 impl RenderOnce for WindowBorder {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let corner_radius = effective_corner_radius(window, self.corner_radius);
         let decorations = window.window_decorations();
         let mut children = self.children;
         if !uses_client_border(decorations) {
@@ -178,10 +195,10 @@ impl RenderOnce for WindowBorder {
             .flex_col()
             .overflow_hidden()
             .when(!(tiling.top || tiling.right), |div| {
-                div.rounded_tr(BORDER_RADIUS)
+                div.rounded_tr(corner_radius)
             })
             .when(!(tiling.top || tiling.left), |div| {
-                div.rounded_tl(BORDER_RADIUS)
+                div.rounded_tl(corner_radius)
             })
             .when(!tiling.top, |div| div.pt(visual_shadow))
             .when(!tiling.bottom, |div| div.pb(visual_shadow))
@@ -212,11 +229,13 @@ impl RenderOnce for WindowBorder {
                     .min_w_0()
                     .overflow_hidden()
                     .when(!(tiling.top || tiling.right), |div| {
-                        div.rounded_tr(BORDER_RADIUS)
+                        div.rounded_tr(corner_radius)
                     })
                     .when(!(tiling.top || tiling.left), |div| {
-                        div.rounded_tl(BORDER_RADIUS)
+                        div.rounded_tl(corner_radius)
                     })
+                    .rounded_bl(corner_radius)
+                    .rounded_br(corner_radius)
                     .border_color(border_color)
                     .when(!tiling.top, |div| div.border_t(BORDER_SIZE))
                     .when(!tiling.bottom, |div| div.border_b(BORDER_SIZE))
@@ -290,6 +309,43 @@ fn cursor_style_for_resize_edge(edge: ResizeEdge) -> CursorStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corner_radius_only_applies_to_floating_client_frames() {
+        let floating = Decorations::Client {
+            tiling: Tiling::default(),
+        };
+        assert_eq!(radius_for_decorations(floating, false, px(12.)), px(12.));
+        assert_eq!(radius_for_decorations(floating, true, px(12.)), px(0.));
+        assert_eq!(
+            radius_for_decorations(Decorations::Server, false, px(12.)),
+            px(0.)
+        );
+        for tiling in [
+            Tiling {
+                top: true,
+                ..Default::default()
+            },
+            Tiling {
+                bottom: true,
+                ..Default::default()
+            },
+            Tiling {
+                left: true,
+                ..Default::default()
+            },
+            Tiling {
+                right: true,
+                ..Default::default()
+            },
+        ] {
+            assert_eq!(
+                radius_for_decorations(Decorations::Client { tiling }, false, px(12.)),
+                px(0.)
+            );
+        }
+        assert_eq!(WindowBorder::default().corner_radius, px(0.));
+    }
 
     #[test]
     fn only_client_decorated_windows_use_the_client_border() {
